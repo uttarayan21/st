@@ -260,7 +260,6 @@ void
 clipcopy(const Arg *dummy)
 {
 	Atom clipboard;
-
 	free(xsel.clipboard);
 	xsel.clipboard = NULL;
 
