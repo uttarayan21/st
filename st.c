@@ -433,6 +433,7 @@ tlinelen(int y)
 	return i;
 }
 
+
 void
 selstart(int col, int row, int snap)
 {
@@ -2000,6 +2001,59 @@ strparse(void)
 }
 
 void
+externalpipe(const Arg *arg)
+{
+	int to[2];
+	char buf[UTF_SIZ];
+	void (*oldsigpipe)(int);
+	Glyph *bp, *end;
+	int lastpos, n, newline;
+
+	if (pipe(to) == -1)
+		return;
+
+	switch (fork()) {
+	case -1:
+		close(to[0]);
+		close(to[1]);
+		return;
+	case 0:
+		dup2(to[0], STDIN_FILENO);
+		close(to[0]);
+		close(to[1]);
+		execvp(((char **)arg->v)[0], (char **)arg->v);
+		fprintf(stderr, "st: execvp %s\n", ((char **)arg->v)[0]);
+		perror("failed");
+		exit(0);
+	}
+
+	close(to[0]);
+	/* ignore sigpipe for now, in case child exists early */
+	oldsigpipe = signal(SIGPIPE, SIG_IGN);
+	newline = 0;
+	for (n = 0; n < term.row; n++) {
+		bp = term.line[n];
+		lastpos = MIN(tlinelen(n) + 1, term.col) - 1;
+		if (lastpos < 0)
+			break;
+		end = &bp[lastpos + 1];
+		for (; bp < end; ++bp)
+			if (xwrite(to[1], buf, utf8encode(bp->u, buf)) < 0)
+				break;
+		if ((newline = term.line[n][lastpos].mode & ATTR_WRAP))
+			continue;
+		if (xwrite(to[1], "\n", 1) < 0)
+			break;
+		newline = 0;
+	}
+	if (newline)
+		(void)xwrite(to[1], "\n", 1);
+	close(to[1]);
+	/* restore */
+	signal(SIGPIPE, oldsigpipe);
+}
+
+void
 strdump(void)
 {
 	size_t i;
@@ -2727,6 +2781,8 @@ copyurl(const Arg *arg) {
 	/* () and [] can appear in urls, but excluding them here will reduce false
 	 * positives when figuring out where a given url ends.
 	 */
+
+    printf("hi %d",arg->i);
 	static char URLCHARS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 		"abcdefghijklmnopqrstuvwxyz"
 		"0123456789-._~:/?#@!$&'*+,;=%";
@@ -2735,7 +2791,7 @@ copyurl(const Arg *arg) {
 
 	/* remove highlighting from previous selection if any */
 	if(sel.ob.x >= 0 && sel.oe.x >= 0)
-		tsetcolor(sel.nb.y, sel.ob.x, sel.oe.x + 1, defaultfg, defaultbg);
+		tsetcolor(sel.nb.y, sel.ob.x, sel.oe.x + 1, 14, defaultbg);
 
 	int i = 0,
 		row = 0, /* row of current URL */
@@ -2806,6 +2862,9 @@ copyurl(const Arg *arg) {
 		tsetdirt(sel.nb.y, sel.ne.y);
 		xsetsel(getsel());
 		xclipcopy();
+        if (arg->i == 1) {
+            printf("Opening the link in dmenu");
+        }
 	}
 
 	free(linestr);
